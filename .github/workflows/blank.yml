@@ -1,0 +1,49 @@
+// Workflow.js - Main orchestrator for modular game systems
+
+// Core Subsystems
+import PlayerVitals from './systems/PlayerVitals.js';
+import PlayerMovement from './systems/PlayerMovement.js';
+import DayNightCycle from './systems/DayNightCycle.js';
+import ResourceSystem from './systems/ResourceSystem.js';
+import CreatureSystem from './systems/CreatureSystem.js';
+// ... import other future modules here
+
+class ElementalForgeGame {
+  constructor(){
+    // Initialize core systems
+    this.vitals = new PlayerVitals();
+    this.movement = new PlayerMovement();
+    this.dayNight = new DayNightCycle();
+    this.resourceSystem = new ResourceSystem();
+    this.creatureSystem = new CreatureSystem();
+
+    this.previousTimestamp = performance.now();
+
+    this.startGameLoop();
+  }
+
+  startGameLoop(){
+    requestAnimationFrame(this.gameLoop.bind(this));
+  }
+
+  gameLoop(currentTimestamp){
+    const delta = (currentTimestamp - this.previousTimestamp)/1000;
+    this.previousTimestamp = currentTimestamp;
+
+    // Update core systems with delta time
+    this.vitals.update(delta);
+    this.movement.update(delta);
+    this.dayNight.update(delta);
+    this.resourceSystem.update(delta);
+    this.creatureSystem.update(delta);
+
+    // Could add collision, UI, interaction updates here...
+
+    requestAnimationFrame(this.gameLoop.bind(this));
+  }
+}
+
+// On DOM ready, start the game
+document.addEventListener('DOMContentLoaded', () => {
+  window.elementalForge = new ElementalForgeGame();
+});
