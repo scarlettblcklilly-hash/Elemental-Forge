@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Elemental Forge - Web Prototype</title>
+<style>
+  body, html {
+    margin: 0; 
+    padding: 0; 
+    height: 100%;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+    background-color: #87CEEB; /* Day sky blue */
+    transition: background-color 1s ease;
+  }
+  #game-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  #player {
+    position: absolute;
+    width: 40px; 
+    height: 40px;
+    background: #444;
+    border-radius: 50%;
+    left: 50%; 
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  #vitals {
+    position: fixed;
+    top: 10px; 
+    left: 10px;
+    background: rgba(255,255,255,0.8);
+    padding: 10px;
+    border-radius: 6px;
+    width: 180px;
+  }
+  .vital-bar {
+    background: #bbb;
+    height: 14px;
+    border-radius: 5px;
+    margin: 6px 0;
+    position: relative;
+  }
+  .vital-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.3s;
+  }
+  #health { background-color: #e74c3c; }
+  #stamina { background-color: #3498db; }
+  #hunger { background-color: #f1c40f; }
+  #thirst { background-color: #1abc9c; }
+  #daynight {
+    position: fixed;
+    top: 10px; 
+    right: 10px;
+    background: rgba(255,255,255,0.8);
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: bold;
+  }
+  /* Touch controls for mobile */
+  #touch-controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+  }
+  .touch-btn {
+    width: 60px; 
+    height: 60px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 50%;
+    color: white;
+    font-weight: bold;
+    font-size: 24px;
+    line-height: 60px;
+    text-align: center;
+    user-select: none;
+    touch-action: none;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="player"></div>
+
+  <div id="vitals">
+    <div>Health</div>
+    <div class="vital-bar"><div class="vital-fill" id="health" style="width: 100%;"></div></div>
+    <div>Stamina</div>
+    <div class="vital-bar"><div class="vital-fill" id="stamina" style="width: 100%;"></div></div>
+    <div>Hunger</div>
+    <div class="vital-bar"><div class="vital-fill" id="hunger" style="width: 100%;"></div></div>
+    <div>Thirst</div>
+    <div class="vital-bar"><div class="vital-fill" id="thirst" style="width: 100%;"></div></div>
+  </div>
+
+  <div id="daynight">Day Time</div>
+
+  <div id="touch-controls">
+    <div class="touch-btn" data-dir="up">▲</div>
+    <div class="touch-btn" data-dir="left">◄</div>
+    <div class="touch-btn" data-dir="down">▼</div>
+    <div class="touch-btn" data-dir="right">►</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const player = document.getElementById('player');
+  const vitals = {
+    health: 100,
+    stamina: 100,
+    hunger: 100,
+    thirst: 100,
+  };
+  const maxVitals = {...vitals};
+  const depletionRates = {
+    hunger: 1 / 60, // 1 per minute
+    thirst: 1.5 / 60, // 1.5 per minute
+    stamina: 15, // per second when active
+    staminaRecover: 10, // per second when resting
+    healthLossWhenStarving: 5, // per second
+  };
+
+  let activeMovement = false;
+  let moveX = 0;
+  let moveY = 0;
+
+  // Day/Night cycle settings (in seconds)
+  const dayDuration = 600; // 10 minutes = 600 seconds
+  const nightDuration = 300; // 5 minutes = 300 seconds
+  let cycleTime = 0;
+  let isDay = true;
+  const dayNightEl = document.getElementById('daynight');
+
+  let lastTimestamp = performance.now();
+
+  // Update UI bars
+  function updateVitalsUI(){
+    document.getElementById('health').style.width = vitals.health + '%';
+    document.getElementById('stamina').style.width = vitals.stamina + '%';
+    document.getElementById('hunger').style.width = vitals.hunger + '%';
+    document.getElementById('thirst').style.width = vitals.thirst + '%';
+  }
+
+  // Game loop
+  function gameUpdate(timestamp){
+    const dt = (timestamp - lastTimestamp) / 1000;
+    lastTimestamp = timestamp;
+
+    // Deplete hunger and thirst gradually
+    vitals.hunger -= depletionRates.hunger * dt;
+    vitals.thirst -= depletionRates.thirst * dt;
+
+    if (activeMovement) {
+      vitals.stamina -= depletionRates.stamina * dt;
+    } else {
+      vitals.stamina += depletionRates.staminaRecover * dt;
+    }
+
+    vitals.stamina = Math.min(Math.max(vitals.stamina, 0), maxVitals.stamina);
+    vitals.hunger = Math.min(Math.max(vitals.hunger, 0), maxVitals.hunger);
+    vitals.thirst = Math.min(Math.max(vitals.thirst, 0), maxVitals.thirst);
+
+    // Health loss if starving or dehydrated
+    if(vitals.hunger <= 0 || vitals.thirst <= 0) {
+      vitals.health -= depletionRates.healthLossWhenStarving * dt;
+    }
+
+    vitals.health = Math.min(Math.max(vitals.health, 0), maxVitals.health);
+
+    updateVitalsUI();
+
+    updatePlayerPosition(dt);
+    updateDayNightCycle(dt);
+
+    requestAnimationFrame(gameUpdate);
+  }
+
+  // Movement speed pixels per second
+  const speed = 150;
+
+  // Position tracking
+  let pos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+  function updatePlayerPosition(dt){
+    const oldPos = {...pos};
+    pos.x += moveX * speed * dt;
+    pos.y += moveY * speed * dt;
+
+    // Boundary constraints
+    pos.x = Math.min(Math.max(0, pos.x), window.innerWidth);
+    pos.y = Math.min(Math.max(0, pos.y), window.innerHeight);
+
+    activeMovement = (pos.x !== oldPos.x) || (pos.y !== oldPos.y);
+
+    player.style.left = pos.x + 'px';
+    player.style.top = pos.y + 'px';
+  }
+
+  // Keyboard input
+  const keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    updateMovementDirection();
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+    updateMovementDirection();
+  });
+
+  function updateMovementDirection(){
+    moveX = 0;
+    moveY = 0;
+    if(keys['a'] || keys['arrowleft']) moveX -= 1;
+    if(keys['d'] || keys['arrowright']) moveX += 1;
+    if(keys['w'] || keys['arrowup']) moveY -= 1;
+    if(keys['s'] || keys['arrowdown']) moveY += 1;
+    
+    // Normalize move vector
+    const length = Math.hypot(moveX, moveY);
+    if(length > 0){
+      moveX /= length;
+      moveY /= length;
+    }
+  }
+
+  // Touch controls setup
+  const touchControls = document.querySelectorAll('.touch-btn');
+  const touchDirection = {x:0, y:0};
+
+  touchControls.forEach(btn => {
+    btn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const dir = btn.dataset.dir;
+      switch(dir){
+        case 'up': touchDirection.y = -1; break;
+        case 'down': touchDirection.y = 1; break;
+        case 'left': touchDirection.x = -1; break;
+        case 'right': touchDirection.x = 1; break;
+      }
+      applyTouchMovement();
+    });
+    btn.addEventListener('touchend', e => {
+      e.preventDefault();
+      const dir = btn.dataset.dir;
+      switch(dir){
+        case 'up': if(touchDirection.y === -1) touchDirection.y = 0; break;
+        case 'down': if(touchDirection.y === 1) touchDirection.y = 0; break;
+        case 'left': if(touchDirection.x === -1) touchDirection.x = 0; break;
+        case 'right': if(touchDirection.x === 1) touchDirection.x = 0; break;
+      }
+      applyTouchMovement();
+    });
+  });
+
+  function applyTouchMovement(){
+    moveX = touchDirection.x;
+    moveY = touchDirection.y;
+    // Normalize
+    const length = Math.hypot(moveX, moveY);
+    if(length > 0){
+      moveX /= length;
+      moveY /= length;
+    }
+  }
+
+  // Day/Night cycle update
+  function updateDayNightCycle(dt){
+    cycleTime += dt;
+    if(isDay && cycleTime >= dayDuration){
+      isDay = false;
+      cycleTime = 0;
+      document.body.style.backgroundColor = '#00122b'; // night dark blue
+      dayNightEl.textContent = 'Night Time';
+      dayNightEl.style.color = '#FFD700';
+    } else if(!isDay && cycleTime >= nightDuration){
+      isDay = true;
+      cycleTime = 0;
+      document.body.style.backgroundColor = '#87CEEB'; // day sky blue
+      dayNightEl.textContent = 'Day Time';
+      dayNightEl.style.color = '#000';
+    }
+  }
+
+  requestAnimationFrame(gameUpdate);
+})();
+</script>
+</body>
+</html>
